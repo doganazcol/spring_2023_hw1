@@ -198,6 +198,46 @@ Linear with num_classes output units
 > (hint: use `gpuststat`)
 
 `YOUR ANSWER HERE`
+import torch
+import torch.nn as nn
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes: int = 1000) -> None:
+        super(AlexNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
 
 ## 4.2 Train AlexNet on CIFAR10. What accuracy do you get?
 
@@ -207,6 +247,48 @@ Report training and validation accuracy on AlexNet and LeNet. Report hyperparame
 > Also no need to tune the models much, you'll do it in the next part.
 
 `YOUR ANSWER HERE`
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torchvision import datasets, transforms
+from torch.utils.data import DataLoader
+
+
+model = AlexNet(num_classes=10)
+
+
+optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+criterion = nn.CrossEntropyLoss()
+
+
+transform = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomCrop(32, padding=4),
+    transforms.ToTensor(),
+    transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+])
+train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=2)
+
+
+for epoch in range(10):
+    for i, (images, labels) in enumerate(train_loader):
+     
+        images, labels = images.cuda(), labels.cuda()
+
+        # Zero the gradients and forward pass
+        optimizer.zero_grad()
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        # Backward pass and optimization
+        loss.backward()
+        optimizer.step()
+
+        # Print the loss and monitor the memory usage
+        print(f"Epoch [{epoch+1}/{10}], Step [{i+1}/{len(train_loader)}], Loss: {loss.item():.4f}")
+        !gpustat
+
 
 
 
@@ -221,27 +303,621 @@ Report training and validation accuracy on AlexNet and LeNet. Report hyperparame
 ## 5.0 Setup plotting for training and validation accuracy and loss curves. Plot a point every epoch.
 
 `PUSH YOUR CODE TO YOUR OWN GITHUB :)`
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
+
+
+train_dataset = MediumImagenetHDF5Dataset(img_size=96, split="train", augment=True)
+val_dataset = MediumImagenetHDF5Dataset(img_size=96, split="val", augment=False)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+
+
+model = MyModel()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+criterion = torch.nn.CrossEntropyLoss()
+
+
+num_epochs = 10
+train_losses = np.zeros(num_epochs)
+train_accs = np.zeros(num_epochs)
+val_losses = np.zeros(num_epochs)
+val_accs = np.zeros(num_epochs)
+
+for epoch in range(num_epochs):
+   
+    model.train()
+    running_loss = 0.0
+    running_acc = 0.0
+    for images, labels in train_loader:
+        images = images.cuda()
+        labels = labels.cuda()
+
+        # Forward pass
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        # Backward pass and optimization
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        # Compute training accuracy
+        preds = torch.argmax(outputs, dim=1)
+        running_acc += torch.sum(preds == labels).item()
+
+        # Compute training loss
+        running_loss += loss.item()
+
+    train_acc = running_acc / len(train_dataset)
+    train_loss = running_loss / len(train_loader)
+    train_accs[epoch] = train_acc
+    train_losses[epoch] = train_loss
+
+   
+    model.eval()
+    running_loss = 0.0
+    running_acc = 0.0
+    for images, labels in val_loader:
+        images = images.cuda()
+        labels = labels.cuda()
+
+        
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        
+        preds = torch.argmax(outputs, dim=1)
+        running_acc += torch.sum(preds == labels).item()
+
+       
+        running_loss += loss.item()
+
+    val_acc = running_acc / len(val_dataset)
+    val_loss = running_loss / len(val_loader)
+    val_accs[epoch] = val_acc
+    val_losses[epoch] = val_loss
+
+    
+    print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+
+
+plt.figure(figsize=(10, 4))
+plt.subplot(121)
+plt.plot(train_losses, label="Train")
+plt.plot(val_losses, label="Validation")
+plt.title("Loss Curves")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.subplot(122)
+plt.plot(train_accs, label="Train")
+plt.plot(val_accs, label="Validation")
+plt.title("Accuracy Curves")
+plt.xlabel("Epoch")
+plt.ylabel("Accuracy")
+plt.legend()
+plt.show()
 
 ## 5.1 Plot the training and validation accuracy and loss curves for AlexNet and LeNet. Attach the plot and any observations you have below.
 
 `YOUR ANSWER HERE`
+import matplotlib.pyplot as plt
+import numpy as np
+import torch
+from torch.utils.data import DataLoader
 
-## 5.2 For just AlexNet, vary the learning rate by factors of 3ish or 10 (ie if it's 3e-4 also try 1e-4, 1e-3, 3e-3, etc) and plot all the loss plots on the same graph. What do you observe? What is the best learning rate? Try at least 4 different learning rates.
+from lenet import LeNet  # assuming that your LeNet model is defined in a separate module
 
-`YOUR ANSWER HERE`
+
+train_dataset = MediumImagenetHDF5Dataset(img_size=32, split="train", augment=True)
+val_dataset = MediumImagenetHDF5Dataset(img_size=32, split="val", augment=False)
+train_loader = DataLoader(train_dataset, batch_size=64, shuffle=True, num_workers=4, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False, num_workers=4, pin_memory=True)
+
+
+model = LeNet(num_classes=200).cuda()
+optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+criterion = torch.nn.CrossEntropyLoss()
+
+
+num_epochs = 10
+train_losses = np.zeros(num_epochs)
+train_accs = np.zeros(num_epochs)
+val_losses = np.zeros(num_epochs)
+val_accs = np.zeros(num_epochs)
+
+
+for epoch in range(num_epochs):
+    
+    model.train()
+    running_loss = 0.0
+    running_acc = 0.0
+    for images, labels in train_loader:
+        images = images.cuda()
+        labels = labels.cuda()
+
+        
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        
+        preds = torch.argmax(outputs, dim=1)
+        running_acc += torch.sum(preds == labels).item()
+
+        
+        running_loss += loss.item()
+
+    train_acc = running_acc / len(train_dataset)
+    train_loss = running_loss / len(train_loader)
+    train_accs[epoch] = train_acc
+    train_losses[epoch] = train_loss
+
+    
+    model.eval()
+    running_loss = 0.0
+    running_acc = 0.0
+    with torch.no_grad():
+        for images, labels in val_loader:
+            images = images.cuda()
+            labels = labels.cuda()
+
+            
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            
+            preds = torch.argmax(outputs, dim=1)
+            running_acc += torch.sum(preds == labels).item()
+
+            
+            running_loss += loss.item()
+
+    val_acc = running_acc / len(val_dataset)
+    val_loss = running_loss / len(val_loader)
+    val_accs[epoch] = val_acc
+    val_losses[epoch] = val_loss
+
+    # print the training and validation metrics for each epoch
+    print(f"Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Acc: {train_acc:.4f}, Val Loss: {val_loss:.4f}, Val Acc: {val_acc:.4f}")
+
+
+plt.figure(figsize=(10, 4))
+plt.subplot(121)
+plt.plot(train_losses, label="Train")
+plt.plot(val_losses, label="Validation")
+plt.title("Loss Curves")
+plt.xlabel("Epoch")
+plt.ylabel("Loss")
+plt.legend()
+plt.subplot(122)
+plt.plot(train_accs, label="Train")
+plt.plot(val_accs, label="Validation")
+plt.title
+
+
+#Alexnet
+import torch
+from torch import nn
+from torch.utils.data import DataLoader
+from torchvision import datasets, transforms
+import matplotlib.pyplot as plt
+
+
+batch_size = 64
+learning_rate = 0.01
+num_epochs = 10
+
+
+transform = transforms.Compose([
+    transforms.Resize((32, 32)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+
+
+train_dataset = datasets.CIFAR10(root='./data', train=True, download=True, transform=transform)
+train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+test_dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
+
+model = LeNet()
+optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate)
+
+
+criterion = nn.CrossEntropyLoss()
+
+
+train_loss_history = []
+train_acc_history = []
+val_loss_history = []
+val_acc_history = []
+
+
+for epoch in range(num_epochs):
+    train_loss = 0.0
+    train_correct = 0.0
+    train_total = 0.0
+    for images, labels in train_loader:
+        
+        images = images.to(device)
+        labels = labels.to(device)
+
+       
+        outputs = model(images)
+        loss = criterion(outputs, labels)
+
+        
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        
+        train_loss += loss.item() * images.size(0)
+        _, predicted = torch.max(outputs.data, 1)
+        train_total += labels.size(0)
+        train_correct += (predicted == labels).sum().item()
+    
+   
+    train_loss = train_loss / len(train_loader.dataset)
+    train_accuracy = 100.0 * train_correct / train_total
+    train_loss_history.append(train_loss)
+    train_acc_history.append(train_accuracy)
+
+    
+    val_loss = 0.0
+    val_correct = 0.0
+    val_total = 0.0
+    model.eval()
+    with torch.no_grad():
+        for images, labels in test_loader:
+            
+            images = images.to(device)
+            labels = labels.to(device)
+
+            
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+
+            
+            val_loss += loss.item() * images.size(0)
+            _, predicted = torch.max(outputs.data, 1)
+            val_total += labels.size(0)
+            val_correct += (predicted == labels).sum().item()
+
+    
+    val_loss = val_loss / len(test_loader.dataset)
+    val_accuracy = 100.0 * val_correct / val_total
+    val_loss_history.append(val_loss)
+    val_acc_history.append(val_accuracy)
+
+  
+    print(f'Epoch [{epoch+1}/{num_epochs}], Train Loss: {train_loss:.4f}, Train Accuracy: {train_accuracy:.2f}%, Val Loss: {val_loss:.4
+
+#Observations 
+AlexNet is a deeper model than LeNet, with 8 layers in the feature extractor and 3 fully connected layers in the classifier, while LeNet has 2 convolutional layers in the feature extractor and 3 fully connected layers in the classifier.
+
+AlexNet uses the ReLU activation function, while LeNet uses the sigmoid activation function.
+
+AlexNet uses dropout regularization in the classifier, while LeNet does not.
+
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import matplotlib.pyplot as plt
+
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))
+])
+train_dataset = datasets.CIFAR10(root='data', train=True, download=True, transform=transform)
+train_dataloader = torch.utils.data.DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=4)
+val_dataset = datasets.CIFAR10(root='data', train=False, download=True, transform=transform)
+val_dataloader = torch.utils.data.DataLoader(val_dataset, batch_size=128, shuffle=False, num_workers=4)
+
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes=10):
+        super(AlexNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
+def train(model, criterion, optimizer, dataloader):
+    model.train()
+    running_loss = 0.0
+    correct = 0
+    total = 0
+    for inputs, labels in dataloader:
+        inputs, labels = inputs.to(device), labels.to(device)
+        optimizer.zero_grad()
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+        running_loss += loss.item() * inputs.size(0)
+        _, predicted = outputs.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().item()
+    epoch_loss = running_loss / len(dataloader.dataset)
+    epoch_acc = 100. * correct / total
+    return epoch_loss, epoch_acc
+
+
+def validate(model, criterion, dataloader):
+    model.eval()
+    running_loss = 0.0
+    correct = 0
+   
+
 
 ## 5.3 Do the same with batch size, keeping learning rate and everything else fixed. Ideally the batch size should be a power of 2, but try some odd batch sizes as well. What do you observe? Record training times and loss/accuracy plots for each batch size (should be easy with W&B). Try at least 4 different batch sizes.
 
 `YOUR ANSWER HERE`
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision.transforms as transforms
+import torchvision.datasets as datasets
+import wandb
+
+wandb.login()
+
+
+train_dataset = datasets.CIFAR10(
+    root='./data',
+    train=True,
+    download=True,
+    transform=transforms.Compose([
+        transforms.Resize((224, 224)),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                             std=[0.229, 0.224, 0.225])
+    ])
+)
+train_dataloader = torch.utils.data.DataLoader(
+    train_dataset,
+    batch_size=32,
+    shuffle=True,
+    num_workers=4,
+    pin_memory=True
+)
+
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes: int = 10) -> None:
+        super(AlexNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+def train(batch_size):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    model = AlexNet(num_classes=10).to(device)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=0.01, momentum=0.9)
+
+    wandb.init(project="batch_size_experiments", name=f"batch_size_{batch_size}")
+    wandb.config.batch_size = batch_size
+
+    for epoch in range(10):
+        running_loss = 0.0
+        correct = 0
+        total = 0
+        for i, data in enumerate(train_dataloader, 0):
+            inputs, labels = data
+            inputs, labels = inputs.to(device), labels.to(device)
+
+            optimizer.zero_grad()
+
+            outputs = model(inputs)
+            loss = criterion(outputs, labels)
+            loss.backward()
+            optimizer.step()
+
+            running_loss += loss.item()
+            _, predicted = outputs.max(1)
+            total += labels.size(0)
+            correct += predicted.eq(labels).
+
+
 ## 5.4 As a followup to the previous question, we're going to explore the effect of batch size on _throughput_, which is the number of images/sec that our model can process. You can find this by taking the batch size and dividing by the time per epoch. Plot the throughput for batch sizes of powers of 2, i.e. 1, 2, 4, ..., until you reach CUDA OOM. What is the largest batch size you can support? What trends do you observe, and why might this be the case?
 You only need to observe the training for ~ 5 epochs to average out the noise in training times; don't train to completion for this question! We're only asking about the time taken. If you're curious for a more in-depth explanation, feel free to read [this intro](https://horace.io/brrr_intro.html). 
 
 `YOUR ANSWER HERE`
+import matplotlib.pyplot as plt
+
+batch_sizes = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024]  
+num_epochs = 5 
+
+throughputs = []
+
+for batch_size in batch_sizes:
+    start_time = time.time()
+
+   
+    for epoch in range(num_epochs):
+        for batch in dataloader:
+           
+            pass
+
+    end_time = time.time()
+
+    time_per_epoch = (end_time - start_time) / num_epochs
+    throughput = batch_size / time_per_epoch
+    throughputs.append(throughput)
+
+    print(f"Batch size: {batch_size}, Time per epoch: {time_per_epoch:.2f}, Throughput: {throughput:.2f} images/sec")
+
+plt.plot(batch_sizes, throughputs)
+plt.xscale('log', base=2)
+plt.xlabel('Batch Size')
+plt.ylabel('Throughput (images/sec)')
+plt.show()
+
 
 ## 5.5 Try different data augmentations. Take a look [here](https://pytorch.org/vision/stable/transforms.html) for torchvision augmentations. Try at least 2 new augmentation schemes. Record loss/accuracy curves and best accuracies on validation/train set.
 
 `YOUR ANSWER HERE`
+import torch
+import torch.nn as nn
+import torch.optim as optim
+import torchvision.transforms as transforms
+from torch.utils.data import DataLoader
+from torchvision.datasets import CIFAR10
+
+
+train_transform = transforms.Compose([
+    transforms.RandomHorizontalFlip(),
+    transforms.RandomRotation(10),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+])
+
+test_transform = transforms.Compose([
+    transforms.ToTensor(),
+    transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))
+])
+
+
+train_dataset = CIFAR10(root='./data', train=True, download=True, transform=train_transform)
+test_dataset = CIFAR10(root='./data', train=False, download=True, transform=test_transform)
+
+train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True, num_workers=2)
+test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False, num_workers=2)
+
+
+class AlexNet(nn.Module):
+    def __init__(self, num_classes: int = 10) -> None:
+        super(AlexNet, self).__init__()
+        self.features = nn.Sequential(
+            nn.Conv2d(3, 64, kernel_size=11, stride=4, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(64, 192, kernel_size=5, padding=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+            nn.Conv2d(192, 384, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(384, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(256, 256, kernel_size=3, padding=1),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2),
+        )
+        self.avgpool = nn.AdaptiveAvgPool2d((6, 6))
+        self.classifier = nn.Sequential(
+            nn.Dropout(),
+            nn.Linear(256 * 6 * 6, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Linear(4096, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        x = self.features(x)
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.classifier(x)
+        return x
+
+
+def train(model, optimizer, criterion, train_loader, device):
+    model.train()
+    running_loss = 0.0
+    correct = 0
+    total = 0
+    for i, data in enumerate(train_loader, 0):
+        inputs, labels = data
+        inputs, labels = inputs.to(device), labels.to(device)
+
+        optimizer.zero_grad()
+
+        outputs = model(inputs)
+        loss = criterion(outputs, labels)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        _, predicted = outputs.max(1)
+        total += labels.size(0)
+        correct += predicted.eq(labels).sum().
+
 
 ## 5.6 (optional) Play around with more hyperparameters. I recommend playing around with the optimizer (Adam, SGD, RMSProp, etc), learning rate scheduler (constant, StepLR, ReduceLROnPlateau, etc), weight decay, dropout, activation functions (ReLU, Leaky ReLU, GELU, Swish, etc), etc.
 
@@ -256,6 +932,82 @@ You only need to observe the training for ~ 5 epochs to average out the noise in
 In `models/models.py`, we provided some skelly/guiding comments to implement ResNet. Implement it and train it on CIFAR10. Report training and validation curves, hyperparameters, best validation accuracy, and training time as compared to AlexNet. 
 
 `YOUR ANSWER HERE`
+
+class ResNetBlock(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1):
+        super(ResNetBlock, self).__init__()
+        
+        self.conv1 = nn.Conv2d(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(out_channels)
+        self.conv2 = nn.Conv2d(out_channels, out_channels, kernel_size=3, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(out_channels)
+        
+        if stride != 1 or in_channels != out_channels:
+            self.shortcut = nn.Sequential(
+                nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride, bias=False),
+                nn.BatchNorm2d(out_channels)
+            )
+        else:
+            self.shortcut = nn.Sequential()
+        
+    def forward(self, x):
+        out = F.relu(self.bn1(self.conv1(x)))
+        out = self.bn2(self.conv2(out))
+        out += self.shortcut(x)
+        out = F.relu(out)
+        return out
+
+class ResNet18(nn.Module):
+    def __init__(self, num_classes=200):
+        super(ResNet18, self).__init__()
+        self.in_channels = 64
+        self.conv1 = nn.Conv2d(in_channels=3,
+                               out_channels=64,
+                               kernel_size=3,
+                               stride=1,
+                               padding=1,
+                               bias=False)
+        self.bn1 = nn.BatchNorm2d(64)
+        self.layer1 = self.make_block(out_channels=64, stride=1)
+        self.layer2 = self.make_block(out_channels=128, stride=2)
+        self.layer3 = self.make_block(out_channels=256, stride=2)
+        self.layer4 = self.make_block(out_channels=512, stride=2)
+        self.linear = nn.Linear(512, num_classes)
+
+    def make_block(self, out_channels, stride):
+        layers = []
+        layers.append(ResNetBlock(self.in_channels, out_channels, stride))
+        self.in_channels = out_channels
+        for _ in range(1, 2):
+            layers.append(ResNetBlock(self.in_channels, out_channels, stride=1))
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = F.relu(self.bn1(self.conv1(x)))
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = F.avg_pool2d(x, 4)
+        x = x.view(x.size(0), -1)
+        x = self.linear(x)
+        return x
+
+import torch.optim as optim
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+model = ResNet18(num_classes=10).to(device)
+
+criterion = nn.CrossEntropyLoss()
+optimizer = optim.SGD(model.parameters(), lr=0.1, momentum=0.9, weight_decay=5e-4)
+scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.1, patience=5, verbose=True)
+
+train_losses = []
+train_accs = []
+val_losses = []
+val_accs = []
+
+for epoch in range
 
 ## 6.1 Visualize examples
 
