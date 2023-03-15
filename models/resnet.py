@@ -66,10 +66,7 @@ class ResNetBlock(nn.Module):
         return out
       
 
-
 class ResNet18(nn.Module):
-    def __init__(self, num_classes=200):
-        class ResNet18(nn.Module):
     def __init__(self, num_classes=200):
         super(ResNet18, self).__init__()
         self.in_channels = 64
